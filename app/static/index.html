@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoClipper</title>
+<style>
+  :root {
+    --bg: #0d0e12; --panel: #16181f; --panel2: #1d2029; --line: #2a2e3a;
+    --text: #eef0f5; --muted: #8b91a3; --accent: #ffd400; --accent-ink: #141414;
+    --good: #3ddc84; --bad: #ff5c5c; --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 80px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+  .logo { font-weight: 800; font-size: 22px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 10px; }
+  .logo b { background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 2px 8px; }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { font-size: 12px; padding: 4px 10px; border-radius: 99px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok::before { content: "● "; color: var(--good); }
+  .pill.no::before { content: "● "; color: var(--bad); }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; }
+  .new h2 { margin: 0 0 4px; font-size: 20px; }
+  .new p.sub { margin: 0 0 16px; color: var(--muted); }
+  .tabs { display: inline-flex; background: var(--panel2); border-radius: 10px; padding: 3px; margin-bottom: 12px; }
+  .tabs button { background: none; border: 0; color: var(--muted); padding: 6px 14px; border-radius: 8px; cursor: pointer; font: inherit; }
+  .tabs button.on { background: var(--line); color: var(--text); }
+  .row { display: flex; gap: 10px; }
+  input[type=text] { flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    padding: 13px 14px; border-radius: 10px; font: inherit; outline: none; }
+  input[type=text]:focus { border-color: var(--accent); }
+  .drop { flex: 1; border: 1.5px dashed var(--line); border-radius: 10px; padding: 12px 14px; color: var(--muted); cursor: pointer;
+          background: var(--panel2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .drop.has { color: var(--text); border-style: solid; }
+  .btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px; padding: 0 20px; font: inherit;
+         font-weight: 700; cursor: pointer; white-space: nowrap; min-height: 46px; }
+  .btn:disabled { opacity: .5; cursor: wait; }
+  .btn.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); font-weight: 600; min-height: 36px; padding: 0 12px; font-size: 13px; }
+  .opts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 14px; }
+  .opts label { font-size: 12px; color: var(--muted); display: block; }
+  select { width: 100%; margin-top: 4px; background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+           border-radius: 8px; padding: 8px; font: inherit; font-size: 14px; }
+  .err { color: var(--bad); margin-top: 10px; font-size: 14px; white-space: pre-wrap; }
+  .warn { background: #2b2410; border: 1px solid #5a4a14; color: #ffe08a; border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 14px; }
+  .warn code { background: #0003; padding: 1px 5px; border-radius: 4px; }
+
+  h3.sec { margin: 30px 0 12px; font-size: 16px; color: var(--muted); font-weight: 600; }
+  .jobs { display: grid; gap: 10px; }
+  .job { display: flex; align-items: center; gap: 14px; cursor: pointer; padding: 14px 16px; }
+  .job:hover, .job.sel { border-color: #444a5c; }
+  .job.sel { background: var(--panel2); }
+  .job .info { flex: 1; min-width: 0; }
+  .job .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job .m { font-size: 13px; color: var(--muted); }
+  .bar { height: 6px; background: var(--panel2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+  .bar i { display: block; height: 100%; background: var(--accent); transition: width .6s; }
+  .badge { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+  .b-done { background: #133322; color: var(--good); }
+  .b-run { background: #332c0d; color: var(--accent); }
+  .b-err { background: #3a1616; color: var(--bad); }
+  .empty { color: var(--muted); text-align: center; padding: 30px; }
+
+  .clips-head { display: flex; justify-content: space-between; align-items: end; gap: 10px; margin: 30px 0 12px; flex-wrap: wrap; }
+  .clips-head h3 { margin: 0; font-size: 18px; }
+  .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .clip { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .clip video { width: 100%; aspect-ratio: 9/16; background: #000; display: block; }
+  .clip .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .clip .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .score { font-weight: 800; font-size: 13px; padding: 2px 8px; border-radius: 6px; }
+  .s-hi { background: var(--accent); color: var(--accent-ink); }
+  .s-mid { background: var(--line); color: var(--text); }
+  .clip .time { font-size: 12px; color: var(--muted); }
+  .clip .ttl { font-weight: 700; line-height: 1.3; }
+  .clip .why { font-size: 13px; color: var(--muted); }
+  .clip .desc { font-size: 13px; background: var(--panel2); border-radius: 8px; padding: 8px 10px; }
+  .clip .acts { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
+  .clip .acts a, .clip .acts button { flex: 1; text-align: center; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+  .note { font-size: 13px; color: var(--muted); }
+
+  @media (max-width: 760px) {
+    .opts { grid-template-columns: repeat(2, 1fr); }
+    .row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo"><b>▶</b> AutoClipper</div>
+    <div class="pills" id="pills"></div>
+  </header>
+
+  <div id="warnings"></div>
+
+  <section class="card new">
+    <h2>Turn a long video into viral shorts</h2>
+    <p class="sub">Paste a link or upload a video. You'll get vertical clips with captions, ready for TikTok, Reels and Shorts.</p>
+    <div class="tabs">
+      <button id="tab-link" class="on" onclick="setTab('link')">Paste link</button>
+      <button id="tab-file" onclick="setTab('file')">Upload file</button>
+    </div>
+    <div class="row">
+      <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+      <label id="drop" class="drop" style="display:none">
+        <span id="dropText">Click to choose a video (mp4, mov, mkv, webm)</span>
+        <input id="file" type="file" accept="video/*" hidden>
+      </label>
+      <button class="btn" id="go" onclick="submitJob()">Make clips</button>
+    </div>
+    <div class="opts">
+      <label>Clips
+        <select id="count"><option>3</option><option selected>5</option><option>8</option><option>10</option><option>15</option></select>
+      </label>
+      <label>Clip length
+        <select id="length">
+          <option value="15-30">15 – 30 sec</option>
+          <option value="20-60" selected>20 – 60 sec</option>
+          <option value="30-90">30 – 90 sec</option>
+          <option value="60-180">1 – 3 min</option>
+        </select>
+      </label>
+      <label>Captions
+        <select id="captions">
+          <option value="pop" selected>Bold · yellow word</option>
+          <option value="green">Bold · green word</option>
+          <option value="clean">Clean subtitles</option>
+          <option value="none">No captions</option>
+        </select>
+      </label>
+      <label>Framing
+        <select id="layout">
+          <option value="auto" selected>Auto</option>
+          <option value="crop">Follow the face</option>
+          <option value="fit">Full frame + blur</option>
+        </select>
+      </label>
+      <label>Transcription
+        <select id="quality">
+          <option value="fast">Fast</option>
+          <option value="balanced" selected>Balanced</option>
+          <option value="best">Best (slow without GPU)</option>
+        </select>
+      </label>
+    </div>
+    <div class="err" id="err"></div>
+  </section>
+
+  <h3 class="sec">Your projects</h3>
+  <div class="jobs" id="jobs"><div class="empty">No projects yet. Paste a link above to start.</div></div>
+
+  <div id="detail"></div>
+</div>
+
+<script>
+let tab = 'link', selected = null, timer = null, status = {};
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = s => { s = Math.round(s); const m = Math.floor(s/60), r = s%60; return `${m}:${String(r).padStart(2,'0')}`; };
+
+function setTab(t) {
+  tab = t;
+  $('tab-link').classList.toggle('on', t === 'link');
+  $('tab-file').classList.toggle('on', t === 'file');
+  $('url').style.display = t === 'link' ? '' : 'none';
+  $('drop').style.display = t === 'file' ? '' : 'none';
+}
+$('file').addEventListener('change', () => {
+  const f = $('file').files[0];
+  $('dropText').textContent = f ? `${f.name} (${(f.size/1e6).toFixed(0)} MB)` : 'Click to choose a video';
+  $('drop').classList.toggle('has', !!f);
+});
+$('url').addEventListener('keydown', e => { if (e.key === 'Enter') submitJob(); });
+
+async function loadStatus() {
+  status = await (await fetch('/api/status')).json();
+  $('pills').innerHTML =
+    `<span class="pill ${status.ffmpeg ? 'ok' : 'no'}">FFmpeg</span>` +
+    `<span class="pill ${status.ai ? 'ok' : 'no'}">${status.ai ? 'AI picks: Claude' : 'AI picks: off'}</span>` +
+    `<span class="pill ${status.gpu ? 'ok' : ''}">${status.gpu ? 'GPU' : 'CPU mode'}</span>`;
+  let w = '';
+  if (!status.ffmpeg) w += `<div class="warn"><b>FFmpeg is missing.</b> Open a terminal and run <code>winget install Gyan.FFmpeg</code>, then close and reopen start.bat.</div>`;
+  if (!status.ai) w += `<div class="warn"><b>Add a Claude API key for much better clip picks.</b> Put <code>ANTHROPIC_API_KEY=your-key</code> in the <code>.env</code> file and restart. Without it, a basic offline picker is used.</div>`;
+  $('warnings').innerHTML = w;
+}
+
+async function submitJob() {
+  $('err').textContent = '';
+  const fd = new FormData();
+  if (tab === 'link') {
+    const url = $('url').value.trim();
+    if (!url) { $('err').textContent = 'Paste a video link first.'; return; }
+    fd.append('url', url);
+  } else {
+    const f = $('file').files[0];
+    if (!f) { $('err').textContent = 'Choose a video file first.'; return; }
+    fd.append('file', f);
+  }
+  const [mn, mx] = $('length').value.split('-');
+  fd.append('count', $('count').value); fd.append('min_len', mn); fd.append('max_len', mx);
+  fd.append('captions', $('captions').value); fd.append('layout', $('layout').value);
+  fd.append('quality', $('quality').value);
+  $('go').disabled = true; $('go').textContent = tab === 'file' ? 'Uploading…' : 'Starting…';
+  try {
+    const r = await fetch('/api/jobs', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || 'Something went wrong');
+    $('url').value = ''; $('file').value = ''; $('dropText').textContent = 'Click to choose a video'; $('drop').classList.remove('has');
+    selected = j.id;
+    await refresh();
+  } catch (e) { $('err').textContent = e.message; }
+  $('go').disabled = false; $('go').textContent = 'Make clips';
+}
+
+function badge(j) {
+  if (j.status === 'done') return `<span class="badge b-done">${j.clip_count} clips</span>`;
+  if (j.status === 'error') return `<span class="badge b-err">Failed</span>`;
+  return `<span class="badge b-run">${Math.round((j.progress||0)*100)}%</span>`;
+}
+
+async function refresh() {
+  const jobs = await (await fetch('/api/jobs')).json();
+  if (!jobs.length) {
+    $('jobs').innerHTML = '<div class="empty">No projects yet. Paste a link above to start.</div>';
+  } else {
+    $('jobs').innerHTML = jobs.map(j => `
+      <div class="card job ${j.id === selected ? 'sel' : ''}" onclick="select('${j.id}')">
+        <div class="info">
+          <div class="t">${esc(j.title)}</div>
+          <div class="m">${j.status === 'done' ? `Finished${j.duration ? ' · source ' + fmt(j.duration) : ''}${j.ai_used ? ' · picked by Claude' : ''}`
+              : j.status === 'error' ? esc((j.error||'').split('\n')[0])
+              : esc(j.stage)}</div>
+          ${j.status === 'running' || j.status === 'queued' ? `<div class="bar"><i style="width:${Math.max(3,(j.progress||0)*100)}%"></i></div>` : ''}
+        </div>
+        ${badge(j)}
+      </div>`).join('');
+  }
+  const busy = jobs.some(j => j.status === 'running' || j.status === 'queued');
+  if (selected) await showDetail(selected);
+  clearTimeout(timer);
+  timer = setTimeout(refresh, busy ? 2000 : 10000);
+}
+
+function select(id) { selected = id; refresh(); }
+
+let shownKey = '';
+async function showDetail(id) {
+  const r = await fetch('/api/jobs/' + id);
+  if (!r.ok) { $('detail').innerHTML = ''; selected = null; return; }
+  const j = await r.json();
+  // Avoid re-rendering (and restarting videos) when nothing changed
+  const key = id + j.status + j.clips.length + (j.error||'');
+  if (key === shownKey) return;
+  shownKey = key;
+  let html = `<div class="clips-head"><div><h3>${esc(j.title)}</h3>
+      <div class="note">${j.clips.length} clip${j.clips.length===1?'':'s'}${j.status === 'running' ? ' so far, still working…' : ''}</div></div>
+      ${j.status === 'done' || j.status === 'error' ? `<button class="btn ghost" onclick="del('${j.id}')">Delete project</button>` : ''}</div>`;
+  if (j.status === 'error') html += `<div class="card err" style="margin-bottom:16px">${esc(j.error)}</div>`;
+  else if (j.error) html += `<div class="warn">${esc(j.error)}</div>`;
+  html += '<div class="clips">' + j.clips.map(c => `
+    <div class="card clip">
+      <video src="/media/${j.id}/${c.file}" poster="/media/${j.id}/${c.thumb}" controls preload="none" playsinline></video>
+      <div class="body">
+        <div class="top"><span class="score ${c.score >= 75 ? 's-hi' : 's-mid'}">${c.score}/100</span>
+          <span class="time">${fmt(c.start)} – ${fmt(c.end)} · ${Math.round(c.end - c.start)}s</span></div>
+        <div class="ttl">${esc(c.title)}</div>
+        <div class="why">${esc(c.reason)}</div>
+        ${c.description ? `<div class="desc">${esc(c.description)}</div>` : ''}
+        <div class="acts">
+          <a class="btn ghost" href="/media/${j.id}/${c.file}?download=1">Download</a>
+          <button class="btn ghost" onclick="copyText(this, ${esc(JSON.stringify(c.description || c.title))})">Copy caption</button>
+        </div>
+      </div>
+    </div>`).join('') + '</div>';
+  $('detail').innerHTML = html;
+}
+
+async function copyText(btn, text) {
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied!'; }
+  catch { btn.textContent = 'Copy failed'; }
+  setTimeout(() => btn.textContent = 'Copy caption', 1500);
+}
+
+async function del(id) {
+  if (!confirm('Delete this project and its clips?')) return;
+  const r = await fetch('/api/jobs/' + id, { method: 'DELETE' });
+  if (!r.ok) { alert((await r.json()).detail); return; }
+  selected = null; shownKey = ''; $('detail').innerHTML = ''; refresh();
+}
+
+loadStatus(); refresh();
+</script>
+</body>
+</html>
