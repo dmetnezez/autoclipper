@@ -147,11 +147,6 @@ def snap_clip(start, end, words, starts, ends, min_len, max_len, duration):
 
 # --------------------------------------------------------------- heuristic
 
-HOOK_WORDS = {"you", "your", "why", "how", "never", "secret", "biggest", "mistake", "crazy",
-              "actually", "truth", "worst", "best", "nobody", "everyone", "stop", "insane",
-              "money", "million", "dead", "love", "hate", "wrong", "real", "honestly", "literally"}
-
-
 def _loudness(wav_path: Path):
     """Per-second RMS loudness, normalized 0..1."""
     try:
@@ -168,59 +163,192 @@ def _loudness(wav_path: Path):
         return None
 
 
+# ------------------------------------------------------- offline picker
+# Works without any API key. Scores every possible clip on hook strength,
+# energy, pace, emotional language and clean start/end, then picks the best.
+
+STOPWORDS = set("""a an the and or but so because if then than that this these those it its it's is are was were be been
+being am do does did doing have has had having i me my mine we us our you your yours he him his she her they them their
+what which who whom whose when where why how all any both each few more most other some such no nor not only own same
+too very can will just should now of at by for with about against between into through during before after above below
+to from up down in out on off over under again further once here there also yeah like um uh okay ok really know mean
+think thing things going gonna got get gets would could said says say one two well right kind sort lot lots actually
+basically literally maybe something someone anything everything people""".split())
+
+STRONG_WORDS = {
+    "never", "always", "secret", "secrets", "biggest", "mistake", "mistakes", "crazy", "insane", "truth", "worst",
+    "best", "nobody", "everyone", "everybody", "stop", "wrong", "dead", "died", "die", "love", "hate", "money",
+    "million", "millions", "billion", "rich", "broke", "fired", "quit", "failed", "fail", "scared", "afraid",
+    "shocking", "unbelievable", "incredible", "honestly", "seriously", "literally", "impossible", "dangerous",
+    "illegal", "lie", "lied", "lying", "fake", "real", "problem", "important", "hardest", "easiest", "only",
+    "first", "last", "huge", "massive", "terrible", "amazing", "perfect", "favorite", "hated", "loved", "regret",
+    "warning", "trick", "hack", "rule", "rules", "lesson", "advice", "changed", "change", "life", "everything",
+}
+QUESTION_STARTS = {"why", "how", "what", "who", "when", "where", "would", "have", "did", "do", "is", "are", "can"}
+DEPENDENT_STARTS = {"and", "but", "so", "because", "or", "then", "also", "which", "yeah", "like", "um", "uh",
+                    "well", "right", "okay", "ok", "anyway", "plus", "cause", "'cause"}
+REFERENCE_STARTS = {"that", "it", "this", "they", "he", "she", "those", "these", "there"}
+FILLER_LEAD = {"so", "and", "but", "um", "uh", "like", "yeah", "well", "okay", "ok", "right", "anyway", "i mean"}
+
+
+def _tok(word):
+    return re.sub(r"[^a-z0-9$%']", "", word.lower())
+
+
+def _sentences(words, starts, ends):
+    end_set = set(ends)
+    out, cur_start = [], None
+    start_set = set(starts)
+    for i in range(len(words)):
+        if i in start_set or cur_start is None:
+            cur_start = i if cur_start is None else cur_start
+        if i in end_set:
+            seg = words[cur_start: i + 1]
+            text = " ".join(w["word"] for w in seg)
+            out.append({"si": cur_start, "ei": i, "start": seg[0]["start"], "end": seg[-1]["end"],
+                        "text": text, "tokens": [_tok(w["word"]) for w in seg]})
+            cur_start = None
+    return out
+
+
+def _hookiness(sent):
+    toks = [t for t in sent["tokens"] if t]
+    if not toks:
+        return 0.0, []
+    score, why = 0.0, []
+    if sent["text"].rstrip().endswith("?") or toks[0] in QUESTION_STARTS:
+        score += 0.35
+        why.append("opens with a question")
+    strong = sum(t in STRONG_WORDS for t in toks)
+    if strong:
+        score += min(strong, 3) * 0.15
+        why.append("bold opening line")
+    if "you" in toks or "your" in toks:
+        score += 0.12
+    if any(re.search(r"\d|\$|%", t) for t in toks):
+        score += 0.15
+        why.append("specific numbers")
+    if any(t.endswith("est") and len(t) > 5 for t in toks):
+        score += 0.08
+    if 4 <= len(toks) <= 16:
+        score += 0.1  # short punchy first line
+    if sent["text"].rstrip().endswith("!"):
+        score += 0.1
+    return min(score, 1.0), why
+
+
+def _clean_lead(text):
+    words = text.split()
+    while words and _tok(words[0]) in FILLER_LEAD:
+        words = words[1:]
+    text = " ".join(words)
+    return text[:1].upper() + text[1:] if text else text
+
+
+def _shorten(text, max_chars):
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars].rsplit(" ", 1)[0]
+    return cut.rstrip(",;:") + "..."
+
+
 def _heuristic(words, starts, ends, n, min_len, max_len, wav_path):
     loud = _loudness(wav_path)
+    sents = _sentences(words, starts, ends)
+    if not sents:
+        return []
+    hook = [_hookiness(s) for s in sents]
     target = (min_len + max_len) / 2
+
     cands = []
-    end_set = set(ends)
-    for si in starts:
-        s = words[si]["start"]
-        best_ei = None
-        for ei in range(si, len(words)):
-            length = words[ei]["end"] - s
+    for i, first in enumerate(sents):
+        # Try every ending sentence that keeps the clip within the length limits
+        best = None
+        for j in range(i, len(sents)):
+            length = sents[j]["end"] - first["start"]
             if length > max_len:
                 break
-            if ei in end_set and length >= min_len:
-                best_ei = ei
-                if length >= target:
-                    break
-        if best_ei is None:
-            continue
-        seg = words[si: best_ei + 1]
-        e = words[best_ei]["end"]
-        text = " ".join(w["word"] for w in seg)
-        tokens = [re.sub(r"[^a-z']", "", w["word"].lower()) for w in seg]
-        wps = len(seg) / max(e - s, 1)
-        first = tokens[:12]
-        score = min(wps / 3.2, 1.0) * 35
-        score += min(sum(t in HOOK_WORDS for t in first), 3) * 8
-        score += min(text.count("?") + text.count("!"), 3) * 4
-        if loud is not None:
-            a, b = int(s), max(int(s) + 1, int(e))
-            score += float(loud[a:b].mean()) * 25 if a < len(loud) else 0
-        if first and first[0] in {"and", "but", "so", "because", "or", "like", "yeah", "um", "uh"}:
-            score -= 12
-        cands.append({"start": s, "end": e, "score": score, "text": text})
+            if length < min_len:
+                continue
+            group = sents[i: j + 1]
+            toks = [t for s in group for t in s["tokens"] if t]
+            nwords = len(toks)
+            score, why = 0.0, list(hook[i][1])
+
+            score += hook[i][0] * 30 + (hook[i + 1][0] * 8 if i + 1 <= j else 0)
+
+            wps = nwords / max(length, 1)
+            pace = max(0.0, 1 - abs(wps - 3.0) / 1.8)
+            score += pace * 14
+            if wps > 3.0:
+                why.append("fast-paced")
+
+            if loud is not None:
+                a, b = int(first["start"]), max(int(first["start"]) + 1, int(sents[j]["end"]))
+                chunk = loud[a:b]
+                if len(chunk):
+                    energy = float(chunk.mean())
+                    score += energy * 14 + min(float(chunk.std()) * 2, 1) * 6
+                    if energy > 0.55:
+                        why.append("high energy")
+
+            strong = sum(t in STRONG_WORDS for t in toks) / max(nwords, 1)
+            score += min(strong * 12, 1) * 10
+
+            last = group[-1]["text"].rstrip()
+            if last.endswith(("!", "?")) or hook[j][0] > 0.3:
+                score += 6
+                why.append("ends on a strong line")
+
+            gaps = sum(1 for k in range(first["si"] + 1, sents[j]["ei"] + 1)
+                       if words[k]["start"] - words[k - 1]["end"] > 1.5)
+            score -= gaps * 4
+
+            first_tok = next((t for t in first["tokens"] if t), "")
+            if first_tok in DEPENDENT_STARTS:
+                score -= 16
+            elif first_tok in REFERENCE_STARTS:
+                score -= 7
+
+            score += max(0.0, 1 - abs(length - target) / max(target, 1)) * 5
+            if best is None or score > best["score"]:
+                best = {"start": first["start"], "end": sents[j]["end"], "score": score,
+                        "i": i, "j": j, "why": why}
+        if best:
+            cands.append(best)
 
     cands.sort(key=lambda c: c["score"], reverse=True)
     picked = []
     for c in cands:
-        if all(c["end"] <= p["start"] or c["start"] >= p["end"] for p in picked):
+        if all(c["end"] + 3 <= p["start"] or c["start"] >= p["end"] + 3 for p in picked):
             picked.append(c)
         if len(picked) >= n:
             break
-    top = max((c["score"] for c in picked), default=1) or 1
+
     out = []
     for c in picked:
-        first_sentence = re.split(r"(?<=[.!?])\s", c["text"])[0]
-        title = first_sentence[:57] + ("..." if len(first_sentence) > 57 else "")
-        hook_words = first_sentence.rstrip(".!?,").split()[:6]
+        group = sents[c["i"]: c["j"] + 1]
+        # Title: the most hook-like of the first three sentences
+        lead = max(range(c["i"], min(c["j"], c["i"] + 2) + 1), key=lambda k: hook[k][0])
+        title_src = _clean_lead(sents[lead]["text"])
+        title = _shorten(title_src, 72)
+        hook_words = title_src.rstrip(".!,").split()
+        hook_text = " ".join(hook_words) if len(hook_words) <= 8 else " ".join(hook_words[:6]) + "..."
+
+        counts = {}
+        for s in group:
+            for t in s["tokens"]:
+                if len(t) >= 5 and t not in STOPWORDS and not t.isdigit() and "'" not in t:
+                    counts[t] = counts.get(t, 0) + 1
+        tags = [f"#{t}" for t, k in sorted(counts.items(), key=lambda x: -x[1]) if k >= 2][:3]
+        description = f"{title_src.rstrip('.')} {' '.join(tags + ['#shorts'])}".strip()
+
+        why = list(dict.fromkeys(c["why"]))[:3] or ["clean, self-contained moment"]
+        reason = (", ".join(why)).capitalize() + "."
         out.append({
-            "start": c["start"], "end": c["end"], "title": title,
-            "hook": " ".join(hook_words),
-            "score": int(40 + 50 * c["score"] / top),
-            "reason": "Picked by the offline scorer (fast speech, energy and hook words). Add a Claude API key for smarter picks.",
-            "description": title,
+            "start": c["start"], "end": c["end"], "title": title, "hook": hook_text,
+            "score": int(max(20, min(97, 25 + c["score"]))), "reason": reason,
+            "description": description,
         })
     return out
 

@@ -179,11 +179,10 @@ async function loadStatus() {
   status = await (await fetch('/api/status')).json();
   $('pills').innerHTML =
     `<span class="pill ${status.ffmpeg ? 'ok' : 'no'}">FFmpeg</span>` +
-    `<span class="pill ${status.ai ? 'ok' : 'no'}">${status.ai ? 'AI picks: Claude' : 'AI picks: off'}</span>` +
+    `<span class="pill ok">${status.ai ? 'Clip picker: Claude' : 'Clip picker: built-in'}</span>` +
     `<span class="pill ${status.gpu ? 'ok' : ''}">${status.gpu ? 'GPU' : 'CPU mode'}</span>`;
   let w = '';
   if (!status.ffmpeg) w += `<div class="warn"><b>FFmpeg is missing.</b> Open a terminal and run <code>winget install Gyan.FFmpeg</code>, then close and reopen start.bat.</div>`;
-  if (!status.ai) w += `<div class="warn"><b>Add a Claude API key for much better clip picks.</b> Put <code>ANTHROPIC_API_KEY=your-key</code> in the <code>.env</code> file and restart. Without it, a basic offline picker is used.</div>`;
   $('warnings').innerHTML = w;
 }
 

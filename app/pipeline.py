@@ -80,7 +80,7 @@ def _process(jid: str):
         float(s.get("max_len", 60)), info["duration"], work / "audio.wav")
     db.update_job(jid, ai_used=1 if used_ai else 0)
     if ai_error:
-        db.update_job(jid, error=f"Claude wasn't reachable, used the offline picker instead: {ai_error[:300]}")
+        db.update_job(jid, error=f"Claude wasn't reachable, used the built-in picker instead: {ai_error[:300]}")
     if not clips:
         raise RuntimeError("Couldn't find any good clips in this video. Try a shorter minimum length.")
 
