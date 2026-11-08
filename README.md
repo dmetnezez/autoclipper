@@ -53,7 +53,13 @@ The first video takes longer because the speech model downloads once (about 250 
 | NVIDIA GPU | ~3–6 min |
 | Modern CPU (Balanced) | ~10–20 min |
 
-AutoClipper uses an NVIDIA GPU automatically if CUDA is available, and falls back to the CPU otherwise.
+AutoClipper uses the CPU by default, which always works. If you have an NVIDIA graphics card and want 3–5× faster transcription, install NVIDIA's libraries once. In the project folder, open a terminal and run:
+
+```
+.venv\Scripts\python -m pip install nvidia-cublas-cu12 "nvidia-cudnn-cu12==9.*"
+```
+
+Then restart `start.bat`. If the GPU still can't be used, AutoClipper switches back to the CPU on its own. To always use the CPU, add `FORCE_CPU=1` to `.env`.
 
 ## Customizing
 

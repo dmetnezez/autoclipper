@@ -29,11 +29,8 @@ def index():
 
 @app.get("/api/status")
 def status():
-    try:
-        import ctranslate2
-        gpu = ctranslate2.get_cuda_device_count() > 0
-    except Exception:
-        gpu = False
+    from . import transcribe
+    gpu = transcribe.active_device == "cuda" if transcribe.active_device else transcribe.gpu_available()
     return {"ffmpeg": have_ffmpeg(), "ai": bool(ANTHROPIC_API_KEY), "gpu": gpu}
 
 
