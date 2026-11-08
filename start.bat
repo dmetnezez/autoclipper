@@ -31,10 +31,18 @@ call ".venv\Scripts\activate.bat"
 
 if not exist ".installed" (
   echo Installing dependencies. This takes a few minutes the first time...
-  python -m pip install --upgrade pip -q
-  python -m pip install -r requirements.txt
+  python -m pip install --upgrade pip -q --no-cache-dir
+  python -m pip install -r requirements.txt --no-cache-dir
   if errorlevel 1 (
-    echo Install failed. Scroll up to see the error.
+    echo.
+    echo  A download was interrupted. Clearing the download cache and trying again...
+    echo.
+    python -m pip cache purge >nul 2>nul
+    python -m pip install -r requirements.txt --no-cache-dir
+  )
+  if errorlevel 1 (
+    echo.
+    echo  Install failed. Check your internet connection and run start.bat again.
     pause
     exit /b 1
   )
